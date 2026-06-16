@@ -1,0 +1,59 @@
+package com.coke.period_tracker_springboot.service;
+
+import com.coke.period_tracker_springboot.entity.DailyLog;
+import com.coke.period_tracker_springboot.entity.UserProfile;
+
+import com.coke.period_tracker_springboot.repository.DailyLogRepository;
+import com.coke.period_tracker_springboot.repository.MenstrualCycleRepository;
+import com.coke.period_tracker_springboot.repository.UserProfileRepository;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import java.time.LocalDate;
+import java.util.List;
+
+@Service
+public class PeriodService {
+
+    @Autowired
+    private UserProfileRepository userProfileRepository;
+
+    @Autowired
+    private DailyLogRepository dailyLogRepository;
+
+    @Autowired
+    private MenstrualCycleRepository menstrualCycleRepository;
+
+    public UserProfile getOrCreateDefaultProfile(){
+        return userProfileRepository.findById(1L).orElseGet(() -> {
+            UserProfile defaultProfile = new UserProfile();
+            return userProfileRepository.save(defaultProfile);
+        });
+    }
+
+    public DailyLog saveDailyLog(Long userId, DailyLog incomingLog){
+        UserProfile profile = userProfileRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User Profile Not Found!"));
+
+        return dailyLogRepository.findByUserProfile_UserIdAndLogDate(userId, incomingLog.getLogDate())
+                .map(existingLog -> {
+                    // Update existing log
+                    existingLog.setFlowIntensity(incomingLog.getFlowIntensity());
+                    existingLog.setCrampSeverity(incomingLog.getCrampSeverity());
+                    existingLog.setMood(incomingLog.getMood());
+                    existingLog.setSymptoms(incomingLog.getSymptoms());
+                    existingLog.setNotes(incomingLog.getNotes());
+                    return dailyLogRepository.save(existingLog);
+                })
+                .orElseGet(() -> {
+                    // Link the new log to the user profile and save it
+                    incomingLog.setUserProfile(profile);
+                    return dailyLogRepository.save(incomingLog);
+                });
+    }
+
+    public List<DailyLog> getUserLogs(Long userId){
+        return dailyLogRepository.findByUserProfile_UserId(userId);
+    }
+}

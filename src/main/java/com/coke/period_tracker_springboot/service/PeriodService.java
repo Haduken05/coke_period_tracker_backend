@@ -56,4 +56,36 @@ public class PeriodService {
     public List<DailyLog> getUserLogs(Long userId){
         return dailyLogRepository.findByUserProfile_UserId(userId);
     }
+
+    public LocalDate predictNextPeriodStartDate(Long userId){
+        // Fetch Past Cycles calculated in the Database (descending)
+        List<com.coke.period_tracker_springboot.entity.MenstrualCycle> cycles =
+                menstrualCycleRepository.findByUserProfile_UserIdOrderByStartDateDesc(userId);
+
+        UserProfile profile = userProfileRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User Profile Not Found!"));
+
+        int cycleLengthToUse = profile.getDefaultCycleLength(); // fallback default (28)
+
+        // If the user has tracked history, calculate their real rolling average instead of the default
+        if(!cycles.isEmpty()){
+            int totalDays = 0;
+            int validCyclesCount = 0;
+
+            for(com.coke.period_tracker_springboot.entity.MenstrualCycle cycle : cycles){
+                // Ignore anomalies to keep predictions accurate
+                if(cycle.getCycleLength() != null && !cycle.getIsAnomaly()){
+                    totalDays += cycle.getCycleLength();
+                    validCyclesCount++;
+                }
+            }
+
+            if(!cycles.isEmpty()){
+                LocalDate lastPeriodStart = cycles.get(0).getStartDate();
+                return lastPeriodStart.plusDays(cycleLengthToUse);
+            }
+        }
+        return LocalDate.now();
+    }
+
 }

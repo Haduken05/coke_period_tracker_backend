@@ -80,11 +80,16 @@ public class PeriodService {
                 }
             }
 
-            if(!cycles.isEmpty()){
-                LocalDate lastPeriodStart = cycles.get(0).getStartDate();
-                return lastPeriodStart.plusDays(cycleLengthToUse);
+            if(validCyclesCount > 0){
+                cycleLengthToUse = totalDays / validCyclesCount;
             }
         }
+
+        if(!cycles.isEmpty()){
+            LocalDate lastPeriodStart = cycles.get(0).getStartDate();
+            return lastPeriodStart.plusDays(cycleLengthToUse);
+        }
+
         return LocalDate.now();
     }
 

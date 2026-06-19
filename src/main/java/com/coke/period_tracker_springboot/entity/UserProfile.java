@@ -30,4 +30,10 @@ public class UserProfile {
     @Column(nullable = false)
     private String password;
 
+    @Column(name = "verification_code")
+    private String verificationCode;
+
+    @Column(name = "otp_expiry_time")
+    private LocalDateTime otpExpiryTime;
+
 }

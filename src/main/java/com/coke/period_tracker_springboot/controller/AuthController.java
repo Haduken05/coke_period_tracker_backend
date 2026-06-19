@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.Optional;
 
@@ -22,17 +23,72 @@ public class AuthController {
     @Autowired
     private PasswordEncoder passwordEncoder;
 
-    @PostMapping("/register")
-    public ResponseEntity<?> registerUser(@RequestBody UserProfile incomingProfile){
+    @Autowired
+    private org.springframework.mail.javamail.JavaMailSender mailSender;
 
-        if(userProfileRepository.findByEmail(incomingProfile.getEmail()).isPresent()){
-            return ResponseEntity.badRequest().body(Map.of("error", "Email is already registered!"));
+    @PostMapping("/send-code")
+    public ResponseEntity<?> sendVerificationCode(@RequestBody Map<String, String> request){
+        String email = request.get("email");
+
+        Optional<UserProfile> existingUserOpt = userProfileRepository.findByEmail(email);
+
+        if(existingUserOpt.isPresent()){
+            UserProfile user = existingUserOpt.get();
+            if(user.getPassword() != null && !"PENDING_VERIFICATION".equalsIgnoreCase(user.getPassword())){
+                return ResponseEntity.badRequest().body(Map.of("error", "Email is already registered"));
+            }
         }
 
-        String securedPassword = passwordEncoder.encode(incomingProfile.getPassword());
-        incomingProfile.setPassword(securedPassword);
+        String otpCode = String.valueOf((int)((Math.random() * 900000) + 100000));
 
-        UserProfile savedUser = userProfileRepository.save(incomingProfile);
+        UserProfile profile = existingUserOpt.orElse(new UserProfile());
+        profile.setEmail(email);
+        profile.setVerificationCode(otpCode);
+        profile.setOtpExpiryTime(LocalDateTime.now().plusMinutes(5));
+
+        if (profile.getPassword() == null) {
+            profile.setPassword("PENDING_VERIFICATION");
+        }
+
+        userProfileRepository.save(profile);
+
+        org.springframework.mail.SimpleMailMessage message = new org.springframework.mail.SimpleMailMessage();
+        message.setTo(email);
+        message.setSubject("Your Account Verification Code");
+        message.setText("Welcome! Use this registration code to complete your verification account setup: " + otpCode);
+
+        mailSender.send(message);
+
+        return ResponseEntity.ok(Map.of("message", "Verification code has been sent to your email address"));
+    }
+
+    @PostMapping("/register")
+    public ResponseEntity<?> registerUser(@RequestBody Map<String, String> registrationPayload){
+        String email = registrationPayload.get("email");
+        String rawPassword = registrationPayload.get("password");
+        String submittedCode = registrationPayload.get("code");
+
+        Optional<UserProfile> profileOpt = userProfileRepository.findByEmail(email);
+        if(profileOpt.isEmpty()){
+            return ResponseEntity.badRequest().body(Map.of("error", "No verification session found. Request a code first."));
+        }
+
+        UserProfile profile = profileOpt.get();
+
+        if(profile.getOtpExpiryTime() == null || profile.getOtpExpiryTime().isBefore(LocalDateTime.now())){
+            return ResponseEntity.badRequest().body(Map.of("error", "Verification code has expired! Please request a new one."));
+        }
+
+        if(profile.getVerificationCode() == null || !profile.getVerificationCode().equals(submittedCode)){
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid verification code!"));
+        }
+
+        profile.setVerificationCode(null);
+        profile.setOtpExpiryTime(null);
+
+        profile.setPassword(passwordEncoder.encode(rawPassword));
+
+        UserProfile savedUser = userProfileRepository.save(profile);
         return ResponseEntity.ok(Map.of(
                 "message", "Registration Successful!",
                 "userId", savedUser.getUserId()
@@ -49,8 +105,11 @@ public class AuthController {
         if(userOpt.isPresent()){
             UserProfile user = userOpt.get();
 
-            if(passwordEncoder.matches(rawPassword, user.getPassword())){
+            if("PENDING_VERIFICATION".equals(user.getPassword())){
+                return ResponseEntity.status(401).body(Map.of("error", "Please complete your email registration setup first!"));
+            }
 
+            if(passwordEncoder.matches(rawPassword, user.getPassword())){
                 return ResponseEntity.ok(Map.of(
                         "message", "Login Successful!",
                         "token", "mock-jwt-token-xyz-123",

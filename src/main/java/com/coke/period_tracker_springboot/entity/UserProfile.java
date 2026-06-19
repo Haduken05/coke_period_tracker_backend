@@ -24,4 +24,10 @@ public class UserProfile {
     @Column(name = "default_period_duration")
     private Integer defaultPeriodDuration = 5;
 
+    @Column(unique = true, nullable = false)
+    private String email;
+
+    @Column(nullable = false)
+    private String password;
+
 }
